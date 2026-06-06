@@ -2,11 +2,11 @@
 title: Pharmacovigilance Signal Detector
 emoji: ⚕
 colorFrom: red
-colorTo: orange
+colorTo: pink
 sdk: docker
 pinned: false
 license: mit
-short_description: PRR / ROR / IC / EBGM signal detection with regulatory decision engine
+short_description: PRR / ROR / IC / EBGM pharmacovigilance signals
 ---
 
 # ⚕ Pharmacovigilance Signal Detector
@@ -17,6 +17,56 @@ Built with [Dash](https://dash.plotly.com/) + [Plotly](https://plotly.com/) — 
 
 ---
 
+## Proposed Plotly Express API
+
+This tool implements a domain-specific primitive that does not yet exist in Plotly Express. The equivalent high-level call, once contributed to the Plotly library, would look like:
+
+```python
+import plotly.express as px
+
+fig = px.signal_detection(
+    df,
+    x="prr",               # signal strength axis: "prr" | "ror" | "ic" | "ebgm"
+    y="cases",             # evidence strength axis
+    size="ebgm",           # point size encoding: "ebgm" | "inv_ci_width" | "cases"
+    color="signal_class",  # color by regulatory class: "signal" | "watch" | "background"
+    hover_data=["drug", "event", "prr", "ror", "ic", "ebgm",
+                "cases", "lower_ci", "upper_ci"],
+    thresholds={
+        "prr":   2,    # PRR ≥ 2 → disproportional reporting
+        "cases": 3,    # minimum case count
+        "ci":    1,    # lower 95% CI > 1
+    },
+)
+fig.show()
+```
+
+### What the function does internally (abstracted steps)
+
+| Step | Action |
+|------|--------|
+| 1 | Ingest raw contingency table `(a, b, c, d)` |
+| 2 | Compute PRR, ROR, IC, EBGM, 95% CI |
+| 3 | Apply regulatory decision rules |
+| 4 | Assign `signal_class` per pair |
+| 5 | Generate scatter with threshold lines |
+| 6 | Format rich hover tooltips |
+
+Until this function is merged into `plotly.py`, you can use this Dash app directly, or import the standalone functions:
+
+```python
+from app import compute_metrics, classify_signals
+
+df = compute_metrics(raw_df)          # adds prr, ror, ic, ebgm, lower_ci, upper_ci
+df = classify_signals(df,             # adds signal_class, signal_score
+    prr_thresh=2.0,
+    n_thresh=3,
+    ci_thresh=1.0,
+)
+```
+
+---
+
 ## What this does
 
 Standard scatter plots show correlations. This tool does something different:
@@ -24,10 +74,10 @@ Standard scatter plots show correlations. This tool does something different:
 | Layer | Meaning |
 |-------|---------|
 | **Data** | Drug–event contingency counts (a, b, c, d) |
-| **Stats** | PRR / ROR / IC / EBGM computed automatically |
-| **Rules** | Regulatory thresholds applied (FDA / EMA) |
+| **Stats** | PRR / ROR / IC / EBGM computed on-the-fly |
+| **Rules** | Regulatory thresholds (FDA / EMA standard) |
 | **Viz** | Scatter with decision quadrants |
-| **Product** | Ranked signal prioritization system |
+| **Product** | Ranked safety signal prioritization |
 
 ---
 
@@ -58,11 +108,11 @@ IC = log₂( P(d,e) / (P(d) × P(e)) )
 Measures how much drug and event co-occur beyond chance.
 
 ### EBGM — Empirical Bayes Geometric Mean
-Bayesian shrinkage estimator using Gamma-Poisson approximation:
+Gamma-Poisson shrinkage approximation:
 ```
 EBGM ≈ (a + 0.5) / (expected + 0.5)
 ```
-Stabilizes rare event inflation and reduces false positives.
+Stabilizes rare-event inflation and reduces false positives.
 
 ---
 
@@ -74,7 +124,7 @@ ELSE IF PRR ≥ 2                              →  🟡 watch
 ELSE                                          →  ⚫ background
 ```
 
-All thresholds are adjustable in the UI.
+All thresholds are adjustable live in the UI.
 
 ---
 
@@ -91,7 +141,7 @@ Upload a CSV with these columns:
 | `c` | int | Other drugs + event |
 | `d` | int | Other drugs + no event |
 
-No pre-computed metrics needed — everything is derived automatically.
+No pre-computed metrics needed — everything is derived automatically. Laplace smoothing (0.5) applied on zero cells.
 
 ---
 
@@ -128,13 +178,13 @@ python app.py
 - Post-market drug safety monitoring
 - Signal prioritization committees
 - Safety analytics dashboards
-- FAERS / EudraVigilance analysis
+- FAERS / EudraVigilance spontaneous reporting analysis
 
 ---
 
 ## Statistical considerations
 
 - **Underreporting bias**: counts reflect reported cases, not actual incidence
-- **Rare event instability**: EBGM shrinkage + minimum count threshold mitigates inflated PRR for rare events
-- **Multiple testing**: Bayesian shrinkage (EBGM, IC) and CI filtering reduce false discovery rate
+- **Rare event instability**: EBGM shrinkage + minimum count threshold mitigates inflated PRR
+- **Multiple testing**: Bayesian shrinkage (EBGM, IC) and CI filtering reduce false discovery
 - **Laplace smoothing**: applied automatically when any contingency cell = 0
